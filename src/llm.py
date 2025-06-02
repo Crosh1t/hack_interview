@@ -1,9 +1,10 @@
-import openai
+from openai import OpenAI
 from loguru import logger
 
 from src.constants import INTERVIEW_POSTION, OPENAI_API_KEY, OUTPUT_FILE_NAME
 
-openai.api_key = OPENAI_API_KEY
+# Инициализация клиента OpenAI
+client = OpenAI(api_key=OPENAI_API_KEY)
 
 SYSTEM_PROMPT = f"""You are interviewing for a {INTERVIEW_POSTION} position.
 You will receive an audio transcription of the question. It may not be complete. You need to understand the question and write an answer to it.\n
@@ -27,13 +28,16 @@ def transcribe_audio(path_to_file: str = OUTPUT_FILE_NAME) -> str:
     Raises:
         Exception: If the audio file fails to transcribe.
     """
-    with open(path_to_file, "rb") as audio_file:
-        try:
-            transcript = openai.Audio.translate("whisper-1", audio_file)
-        except Exception as error:
-            logger.error(f"Can't transcribe audio: {error}")
-            raise error
-    return transcript["text"]
+    try:
+        with open(path_to_file, "rb") as audio_file:
+            transcript = client.audio.transcriptions.create(
+                model="whisper-1", 
+                file=audio_file
+            )
+        return transcript.text
+    except Exception as error:
+        logger.error(f"Can't transcribe audio: {error}")
+        raise error
 
 
 def generate_answer(transcript: str, short_answer: bool = True, temperature: float = 0.7) -> str:
@@ -48,13 +52,6 @@ def generate_answer(transcript: str, short_answer: bool = True, temperature: flo
     Returns:
         str: The generated answer.
 
-    Example:
-        ```python
-        transcript = "Can you tell me about the weather?"
-        answer = generate_answer(transcript, short_answer=False, temperature=0.8)
-        print(answer)
-        ```
-
     Raises:
         Exception: If the LLM fails to generate an answer.
     """
@@ -62,8 +59,9 @@ def generate_answer(transcript: str, short_answer: bool = True, temperature: flo
         system_prompt = SYSTEM_PROMPT + SHORTER_INSTRACT
     else:
         system_prompt = SYSTEM_PROMPT + LONGER_INSTRACT
+    
     try:
-        response = openai.ChatCompletion.create(
+        response = client.chat.completions.create(
             model="gpt-3.5-turbo",
             temperature=temperature,
             messages=[
@@ -71,7 +69,7 @@ def generate_answer(transcript: str, short_answer: bool = True, temperature: flo
                 {"role": "user", "content": transcript},
             ],
         )
+        return response.choices[0].message.content
     except Exception as error:
         logger.error(f"Can't generate answer: {error}")
         raise error
-    return response["choices"][0]["message"]["content"]
